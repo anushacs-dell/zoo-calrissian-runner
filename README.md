@@ -1,15 +1,15 @@
 # zoo-calrissian-runner
 
-Python library for bridging zoo execution context and calrissian
+Python library for bridging ZOO-Project execution context and Calrissian
 
 ## 🔗 Dependencies
 
-This runner now uses **[zoo-runner-common](https://github.com/ZOO-Project/zoo-runner-common)** for shared functionality, eliminating ~166 lines of duplicated code.
+This runner now uses **[zoo-runner-common](https://github.com/ZOO-Project/zoo-runner-common)** and **[zoo-template-common](https://github.com/ZOO-Project/zoo-template-common)** for shared functionality, eliminating duplicated code.
 
 **Key changes:**
 - ✅ Inherits from `BaseRunner` for common methods
 - ✅ Uses shared `ZooConf`, `ZooInputs`, `ZooOutputs`, `CWLWorkflow` classes
-- ✅ Implements `ExecutionHandler` interface from zoo-runner-common
+- ✅ `ExecutionHandler` inherits from `CommonExecutionHandler` (from zoo-template-common)
 - ✅ Focuses only on Calrissian/Kubernetes-specific logic
 
 ## Installation
