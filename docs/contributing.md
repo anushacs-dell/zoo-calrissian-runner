@@ -8,6 +8,11 @@ Thank you for your interest in contributing to `zoo-calrissian-runner`! This doc
 
 ---
 
+
+> **Important:** Always open your Pull Request against the `develop` branch, **not** `main`.
+> Pull Requests targeting `main` directly will not be accepted.
+
+
 ## Getting Started
 
 ### Prerequisites
@@ -127,10 +132,14 @@ git push origin feature/your-feature-name
 
 Then open a Pull Request on GitHub with:
 
+- **Base branch set to `develop`** - this is required
 - A clear title and description
 - Reference to any related issues (`Closes #123`)
 - A summary of what changed and why
 - Notes on any breaking changes
+
+> **Reminder:** The base branch of your PR must be `develop`, not `main`.
+> `main` is only updated by maintainers when cutting a release from `develop`.
 
 ---
 
@@ -260,16 +269,12 @@ hatch run docs:deploy
 
 Releases are managed by project maintainers:
 
-1. Update the version in `zoo_calrissian_runner/__about__.py`
-2. Update `CHANGELOG.md` (if present)
-3. Create and push a release tag:
-
-   ```bash
-   git tag v1.2.3
-   git push origin v1.2.3
-   ```
-
-4. Build and publish the package:
+1. Ensure all changes are merged into `develop` and tested
+2. Update the version in `zoo_calrissian_runner/__about__.py`
+3. Update `CHANGELOG.md` (if present)
+4. Merge `develop` into `main`
+5. Create and push a release tag
+6. Build and publish the package:
 
    ```bash
    hatch build
