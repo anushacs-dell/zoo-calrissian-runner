@@ -3,12 +3,15 @@ import os
 
 import sys
 
-# Add a custom directory to sys.path
-sys.path.append('tests/dnbr/')
-try:
-    from dnbr.service import dnbr
-except:
-    print("Internal dnbr module failed/skipped")
+# Add tests/dnbr to python path
+sys.path.append(
+    os.path.join(
+        os.path.dirname(__file__),
+        "dnbr"
+    )
+)
+
+from service import dnbr
 
 from dotenv import load_dotenv
 
