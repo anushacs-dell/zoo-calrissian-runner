@@ -288,31 +288,14 @@ class ZooCalrissianRunner(BaseRunner):
         if self.execution.is_complete():
             logger.info("execution complete")
 
-        complete = self.execution.is_complete()
-        succeeded = self.execution.is_succeeded()
-
-        print(f"========== CALRISSIAN STATUS ==========")
-        print(f"COMPLETE={complete}")
-        print(f"SUCCEEDED={succeeded}")
-        print(f"=======================================")
-
-        if not succeeded:
-            logger.error("Execution failed. Reading logs instead of output")
-
-            try:
-                log = self.execution.get_log()
-                logger.error(f"CALRISSIAN LOG:\n{log}")
-            except Exception as e:
-                logger.error(f"LOG READ FAILED: {e}")
-
-            return zoo.SERVICE_FAILED
-
-
-        exit_value = zoo.SERVICE_SUCCEEDED
+        if self.execution.is_succeeded():
+            exit_value = zoo.SERVICE_SUCCEEDED
+        else:
+            exit_value = zoo.SERVICE_FAILED
 
         self.update_status(progress=90, message="delivering outputs, logs and usage report")
 
-
+        logger.info("handle outputs execution logs")
         output = self.execution.get_output()
         log = self.execution.get_log()
         usage_report = self.execution.get_usage_report()
@@ -359,244 +342,78 @@ class ZooCalrissianRunner(BaseRunner):
             workflow = None
         return workflow
 
-
-
     def wrap(self):
         workflow_id = self.get_workflow_id()
-
+        
         # Get the workflow object
         workflow = self.workflow.get_workflow()
-
-
-        print("===== ORIGINAL WORKFLOW =====")
-        print("ID:", workflow.id)
-
-        for step in workflow.steps:
-            print(
-                "STEP:",
-                step.id,
-                "RUN:",
-                step.run
-            )
-
-        print("==============================")
-
-
-
-        # Keep original workflow IDs.
-        logger.info(f"Workflow id kept as: {workflow.id}")
+        
+        # Rename any CommandLineTool/process named 'main' to avoid conflict with orchestrator
+        # The orchestrator created by eoap-cwlwrap is always named 'main'
+        for elem in self.workflow.cwl:
+            if hasattr(elem, 'id') and elem.id == 'main':
+                # Rename to avoid conflict - use the workflow name or 'clt'
+                new_id = f"{workflow_id}_clt"
+                logger.info(f"Renaming '{elem.id}' to '{new_id}' to avoid conflict with orchestrator")
+                elem.id = new_id
+                
+                # Update any references to this process in workflow steps
+                if hasattr(workflow, 'steps'):
+                    for step in workflow.steps:
+                        if step.run == '#main':
+                            step.run = f'#{new_id}'
+                            logger.info(f"Updated step '{step.id}' to reference '#{new_id}'")
+        
+        # Now wrap the workflow (not the CommandLineTool)
+        process_to_wrap = workflow.id
+        logger.info(f"Wrapping process: {process_to_wrap}")
 
         # Load the directory stage-in CWL
         directory_stage_in_cwl = self.load_a_workflow(
-            os.environ.get(
-                "WRAPPER_STAGE_IN",
-                os.path.join(os.path.dirname(__file__), "assets", "stagein.yaml")
-            )
+            os.environ.get("WRAPPER_STAGE_IN", "/assets/stagein.yaml")
         )
 
         # Load the directory stage-in CWL
         file_stage_in_cwl = self.load_a_workflow(
-                os.environ.get(
-                    "WRAPPER_STAGE_IN_FILE",
-                    os.path.join(os.path.dirname(__file__), "assets", "stagein-file.yaml")
-                )
+            os.environ.get("WRAPPER_STAGE_IN_FILE", "/assets/stagein-file.yaml")
         )
 
         # Load the directory stage-out CWL
         directory_stage_out_cwl = self.load_a_workflow(
-            os.environ.get(
-                "WRAPPER_STAGE_OUT",
-                os.path.join(os.path.dirname(__file__), "assets", "stageout.yaml")
-            )
+            os.environ.get("WRAPPER_STAGE_OUT", "/assets/stageout.yaml")
         )
-
-        logger.info(
-            f"directory_stage_in={directory_stage_in_cwl}, "
-            f"class={getattr(directory_stage_in_cwl, 'class_', None)}"
-        )
-
-        logger.info(
-            f"directory_stage_out={directory_stage_out_cwl}, "
-            f"class={getattr(directory_stage_out_cwl, 'class_', None)}"
-        )
-
-        print("\n===== CHECK FOR SELF REFERENCES =====")
-
-        for step in workflow.steps:
-            print(
-                "STEP:",
-                step.id,
-                "RUN:",
-                step.run,
-                "WORKFLOW_ID:",
-                workflow.id
-            )
-
-            if str(step.run) == f"#{workflow.id}":
-                print("SELF REFERENCE FOUND !!!")
-
-        print("==============================\n")
 
         try:
             wrapped_workflow = wrap(
-                workflow=workflow,
+                workflows=self.workflow.cwl,
+                workflow_id=process_to_wrap,
                 directory_stage_in=directory_stage_in_cwl,
-                directory_stage_out=directory_stage_out_cwl,
                 file_stage_in=file_stage_in_cwl,
+                stage_out=directory_stage_out_cwl,
             )
-
+            
             # Serialize using dump_cwl
             from cwl_loader import dump_cwl
             from io import StringIO
             import yaml
-
+            
             stream = StringIO()
             try:
                 dump_cwl(wrapped_workflow, stream)
                 wf = yaml.safe_load(stream.getvalue())
-                print("\n===== RAW WF =====")
-                print(type(wf))
-
-                if isinstance(wf, dict):
-                    print("KEYS:", list(wf.keys()))
-
-                    print("HAS_GRAPH:", "$graph" in wf)
-
-                    if "$graph" in wf:
-                        print("GRAPH_LEN:", len(wf["$graph"]))
-                else:
-                    print(wf)
-
-                print("==================\n")
-                # Add original workflow into graph if missing
-                if "$graph" in wf:
-
-                    original_stream = StringIO()
-                    dump_cwl(workflow, original_stream)
-
-                    original_dict = yaml.safe_load(original_stream.getvalue())
-
-                    original_id = original_dict.get("id")
-
-                    logger.info(f"Original workflow id: {original_id}")
-
-                    existing_ids = [
-                        x.get("id")
-                        for x in wf["$graph"]
-                        if isinstance(x, dict)
-                    ]
-
-                    if original_id not in existing_ids:
-                        logger.info(f"Adding original workflow: {original_id}")
-                        wf["$graph"].append(original_dict)
             except Exception as e:
                 # Fallback: manual serialization if dump_cwl fails
                 logger.warning(f"dump_cwl failed: {e}, using manual serialization")
                 if isinstance(wrapped_workflow, list):
-
-                    graph = []
-
-                    for proc in wrapped_workflow:
-                        saved = proc.save()
-
-                        if isinstance(saved, dict):
-                            graph.append(saved)
-
                     wf = {
-                        "cwlVersion": "v1.2",
-                        "$graph": graph
+                        '$graph': [proc.save() for proc in wrapped_workflow],
+                        'cwlVersion': 'v1.2'
                     }
-
                 else:
                     wf = wrapped_workflow.save()
-                    wf["cwlVersion"] = "v1.2"
-
+                
         except Exception as e:
             logger.error(f"Cannot wrap CWL: {e}")
             raise e
-        
-        # Add stage-in/out tools into graph if missing
-        if "$graph" in wf and isinstance(wf["$graph"], list):
-            logger.error(f"GRAPH COUNT: {len(wf.get('$graph', []))}")
-
-            graph_ids = [
-                item.get("id")
-                for item in wf["$graph"]
-                if isinstance(item, dict)
-            ]
-
-            logger.error(f"GRAPH IDS BEFORE: {graph_ids}")
-
-            for tool in [
-                directory_stage_in_cwl,
-                file_stage_in_cwl,
-                directory_stage_out_cwl,
-            ]:
-                tool_id = tool.id
-
-                if tool_id not in graph_ids:
-                    logger.info(f"Adding missing tool to graph: {tool_id}")
-
-                    stream = StringIO()
-                    dump_cwl(tool, stream)
-
-                    tool_dict = yaml.safe_load(stream.getvalue())
-
-                    wf["$graph"].append(tool_dict)
-                    graph_ids.append(tool_dict.get("id"))
-
-                    logger.info(f"Added graph item: {tool_dict.get('id')}")
-
-        # Ensure CWL version exists for Calrissian/cwltool validation
-        if "cwlVersion" not in wf:
-            wf["cwlVersion"] = "v1.2"
-
-
-        # FIX: cwltool:loop namespace
-        if "$namespaces" not in wf:
-            wf["$namespaces"] = {}
-
-        wf["$namespaces"]["cwltool"] = "https://w3id.org/cwl/cwltool#"
-
-
-        print("\n===== DEBUG GRAPH =====")
-
-        for item in wf.get("$graph", []):
-            if isinstance(item, dict):
-                print("ID:", item.get("id"))
-                print("TYPE:", item.get("class"))
-
-                if item.get("class") == "Workflow":
-                    for step in item.get("steps", []):
-                        print(
-                            "  STEP:",
-                            step.get("id"),
-                            "RUN:",
-                            step.get("run")
-                        )
-
-        
-        print("ALL IDS:")
-        print([
-            x.get("id") for x in wf.get("$graph", [])
-        ])
-        print("===== END DEBUG =====")
-
-
-        print("\n===== FINAL WF =====")
-
-        if isinstance(wf, dict):
-            print("KEYS:", list(wf.keys()))
-
-            if "$graph" in wf:
-                print("FINAL GRAPH LEN:", len(wf["$graph"]))
-                print("FINAL IDS:", [
-                    x.get("id")
-                    for x in wf["$graph"]
-                    if isinstance(x, dict)
-                ])
-
-        print("====================\n")
 
         return wf
- 
