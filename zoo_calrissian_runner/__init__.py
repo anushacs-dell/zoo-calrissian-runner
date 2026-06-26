@@ -385,11 +385,10 @@ class ZooCalrissianRunner(BaseRunner):
 
         try:
             wrapped_workflow = wrap(
-                workflows=self.workflow.cwl,
-                workflow_id=process_to_wrap,
+                workflow=workflow,
                 directory_stage_in=directory_stage_in_cwl,
                 file_stage_in=file_stage_in_cwl,
-                stage_out=directory_stage_out_cwl,
+                directory_stage_out=directory_stage_out_cwl,
             )
             
             # Serialize using dump_cwl
