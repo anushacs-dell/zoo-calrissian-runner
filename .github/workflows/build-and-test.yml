@@ -5,7 +5,7 @@ name: Build and Test
 
 on:
   push:
-    branches: [ "develop", "feature/**" ]
+    branches: [ "develop", "feature/calrissian-runner" ]
   pull_request:
     branches: [ "main" ]
 
