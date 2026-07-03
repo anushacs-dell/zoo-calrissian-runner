@@ -1,37 +1,55 @@
 import inspect
 import os
-import sys
+#import sys
 import uuid
 from datetime import datetime
 from typing import Union
 
 import attr
-import cwl_utils
+#import cwl_utils
 from eoap_cwlwrap import wrap
-#from eoap_cwlwrap import wrap_locations
-from cwl_loader import dump_cwl
+
+# from eoap_cwlwrap import wrap_locations
+#from cwl_loader import dump_cwl
 from cwl_loader import load_cwl_from_location as load_workflow
-from cwl_loader import load_cwl_from_yaml as load_cwl
-from cwl_utils.parser import save
+#from cwl_loader import load_cwl_from_yaml as load_cwl
+#from cwl_utils.parser import save
 from loguru import logger
 from pycalrissian.context import CalrissianContext
 from pycalrissian.execution import CalrissianExecution
 from pycalrissian.job import CalrissianJob
 from pycalrissian.utils import copy_to_volume
-import cwl_utils.__meta__ as cwl_meta
-import pathlib
-import json
-import yaml
-from io import StringIO
+#import cwl_utils.__meta__ as cwl_meta
+#import pathlib
+#import json
+#import yaml
+#from io import StringIO
 
 # Import from zoo-runner-common
-import os
+#import os
+
 # Add zoo-runner-common to path (adjust based on installation)
 # import sys
 # sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../zoo-runner-common')))
 from zoo_runner_common.base_runner import BaseRunner
-from zoo_runner_common.zoo_conf import ZooConf, ZooInputs, ZooOutputs, CWLWorkflow
+from zoo_runner_common.zoo_conf import (
+    ZooConf,
+    ZooInputs,
+    ZooOutputs,
+    CWLWorkflow,
+)
+
 from zoo_calrissian_runner.handlers import ExecutionHandler
+
+__all__ = [
+    "ZooCalrissianRunner",
+    "ExecutionHandler",
+    "ZooConf",
+    "ZooInputs",
+    "ZooOutputs",
+    "CWLWorkflow",
+]
+
 
 # useful class for hints in CWL
 @attr.s
@@ -47,7 +65,9 @@ class ResourceRequirement:
 
     @classmethod
     def from_dict(cls, env):
-        return cls(**{k: v for k, v in env.items() if k in inspect.signature(cls).parameters})
+        return cls(
+            **{k: v for k, v in env.items() if k in inspect.signature(cls).parameters}
+        )
 
 
 try:
@@ -55,10 +75,12 @@ try:
 except ImportError:
     # Use centralized ZooStub from zoo-runner-common package
     from zoostub import ZooStub
+
     zoo = ZooStub()
 
 
 # Note: ZooConf, ZooInputs, ZooOutputs, CWLWorkflow are now in zoo-runner-common
+
 
 class ZooCalrissianRunner(BaseRunner):
     def __init__(
@@ -84,15 +106,12 @@ class ZooCalrissianRunner(BaseRunner):
         self.monitor_interval = 30
         if "lenv" in self.zoo_conf.conf and "usid" in self.zoo_conf.conf["lenv"]:
             if self.dedicated_namespace is None:
-                uuidString=self.zoo_conf.conf['lenv']['usid']
+                uuidString = self.zoo_conf.conf["lenv"]["usid"]
                 self._namespace_name = ZooCalrissianRunner.shorten_namespace(
-                    f"{str(self.zoo_conf.workflow_id).replace('_', '-')}-"
-                    f"{uuidString}"
+                    f"{str(self.zoo_conf.workflow_id).replace('_', '-')}-{uuidString}"
                 )
             else:
-                self._namespace_name = self.shorten_namespace(
-                    self.dedicated_namespace
-                )
+                self._namespace_name = self.shorten_namespace(self.dedicated_namespace)
         else:
             self._namespace_name = None
 
@@ -107,9 +126,7 @@ class ZooCalrissianRunner(BaseRunner):
 
     # Note: get_volume_size() is now inherited from BaseRunner
 
-
     # Note: get_max_cores() is now inherited from BaseRunner
-
 
     # Note: get_max_ram() is now inherited from BaseRunner
 
@@ -123,12 +140,15 @@ class ZooCalrissianRunner(BaseRunner):
         else:
             return self._namespace_name
 
-
     # Note: update_status() is now inherited from BaseRunner
 
     def get_annotations(self):
         """Get the labels for the execution."""
-        return self.zoo_conf.conf["pod_annotations"] if "pod_annotations" in self.zoo_conf.conf else None
+        return (
+            self.zoo_conf.conf["pod_annotations"]
+            if "pod_annotations" in self.zoo_conf.conf
+            else None
+        )
 
     def execute(self, wall_time=None):
         self.update_status(progress=2, message="Pre-execution hook")
@@ -143,7 +163,9 @@ class ZooCalrissianRunner(BaseRunner):
 
         logger.info("wrap CWL workflow with stage-in/out steps")
         wrapped_workflow = self.wrap()
-        self.update_status(progress=10, message="workflow wrapped, creating processing environment")
+        self.update_status(
+            progress=10, message="workflow wrapped, creating processing environment"
+        )
 
         logger.info("create kubernetes namespace for Calrissian execution")
 
@@ -174,29 +196,35 @@ class ZooCalrissianRunner(BaseRunner):
                 service_account=self.handler.get_service_account(),
             )
         session.initialise()
-        self.update_status(progress=15, message="processing environment created, preparing execution")
+        self.update_status(
+            progress=15, message="processing environment created, preparing execution"
+        )
 
         # Get orchestrator workflow from wrapped workflow to use its input types
         orchestrator_workflow = None
         orchestrator_uri_inputs = set()  # Track which inputs are URI types
-        for elem in wrapped_workflow.get('$graph', []):
-            if elem.get('id') == 'main' and elem.get('class') == 'Workflow':
+        for elem in wrapped_workflow.get("$graph", []):
+            if elem.get("id") == "main" and elem.get("class") == "Workflow":
                 # Convert to a workflow-like object that get_processing_parameters can read
                 from types import SimpleNamespace
+
                 orchestrator_workflow = SimpleNamespace(inputs=[])
-                for inp in elem.get('inputs', []):
-                    inp_obj = SimpleNamespace(
-                        id=inp.get('id'),
-                        type_=inp.get('type')
-                    )
+                for inp in elem.get("inputs", []):
+                    inp_obj = SimpleNamespace(id=inp.get("id"), type_=inp.get("type"))
                     orchestrator_workflow.inputs.append(inp_obj)
 
                     # Track URI type inputs (from string_format.yaml)
-                    inp_type = inp.get('type')
-                    if isinstance(inp_type, str) and 'string_format.yaml' in inp_type:
+                    inp_type = inp.get("type")
+                    if isinstance(inp_type, str) and "string_format.yaml" in inp_type:
                         # Extract short input name (e.g., "main#pre_event" -> "pre_event")
-                        inp_name = inp.get('id', '').split('#')[-1] if '#' in inp.get('id', '') else inp.get('id', '')
-                        inp_name = inp_name.split('/')[-1]  # Also handle workflow/input format
+                        inp_name = (
+                            inp.get("id", "").split("#")[-1]
+                            if "#" in inp.get("id", "")
+                            else inp.get("id", "")
+                        )
+                        inp_name = inp_name.split("/")[
+                            -1
+                        ]  # Also handle workflow/input format
                         orchestrator_uri_inputs.add(inp_name)
                 break
 
@@ -208,27 +236,32 @@ class ZooCalrissianRunner(BaseRunner):
 
         # Transform string values to {value: ...} format for URI type inputs
         for key in orchestrator_uri_inputs:
-            if key in processing_parameters and isinstance(processing_parameters[key], str):
-                logger.info(f"Converting URI parameter '{key}' to {{value: ...}} format for orchestrator")
+            if key in processing_parameters and isinstance(
+                processing_parameters[key], str
+            ):
+                logger.info(
+                    f"Converting URI parameter '{key}' to {{value: ...}} format for orchestrator"
+                )
                 processing_parameters[key] = {"value": processing_parameters[key]}
-
 
         # Transform ADES_* parameters to match orchestrator expectations
         # Get orchestrator inputs from wrapped workflow
         orchestrator_inputs = set()
-        for elem in wrapped_workflow.get('$graph', []):
-            if elem.get('id') == 'main' and elem.get('class') == 'Workflow':
-                orchestrator_inputs = {inp['id'] for inp in elem.get('inputs', [])}
+        for elem in wrapped_workflow.get("$graph", []):
+            if elem.get("id") == "main" and elem.get("class") == "Workflow":
+                orchestrator_inputs = {inp["id"] for inp in elem.get("inputs", [])}
                 break
 
         # Remove ADES_ prefix for orchestrator parameters
         transformed_parameters = {}
         for key, value in processing_parameters.items():
             # Check if there's a matching orchestrator input without ADES_ prefix
-            if key.startswith('ADES_'):
-                unprefixed_key = key.replace('ADES_', '', 1)
+            if key.startswith("ADES_"):
+                unprefixed_key = key.replace("ADES_", "", 1)
                 if unprefixed_key in orchestrator_inputs:
-                    logger.info(f"Transforming parameter {key} → {unprefixed_key} for orchestrator")
+                    logger.info(
+                        f"Transforming parameter {key} → {unprefixed_key} for orchestrator"
+                    )
                     transformed_parameters[unprefixed_key] = value
                 else:
                     transformed_parameters[key] = value
@@ -240,26 +273,26 @@ class ZooCalrissianRunner(BaseRunner):
 
         # Upload input complex data into calrissian_wdir
         for i in processing_parameters:
-            if isinstance(processing_parameters[i],dict):
-                if processing_parameters[i].get("class",None)=="File":
+            if isinstance(processing_parameters[i], dict):
+                if processing_parameters[i].get("class", None) == "File":
                     copy_to_volume(
                         context=session,
                         volume={
                             "name": session.calrissian_wdir,
                             "persistentVolumeClaim": {
                                 "claimName": session.calrissian_wdir
-                            }
+                            },
                         },
                         volume_mount={
                             "name": session.calrissian_wdir,
                             "mountPath": "/calrissian",
                         },
-                        source_paths=[
-                            processing_parameters[i]["path"]
-                        ],
+                        source_paths=[processing_parameters[i]["path"]],
                         destination_path="/calrissian",
                     )
-                    processing_parameters[i]["path"]=processing_parameters[i]["path"].replace(self.zoo_conf.conf["main"]["tmpPath"],"/calrissian")
+                    processing_parameters[i]["path"] = processing_parameters[i][
+                        "path"
+                    ].replace(self.zoo_conf.conf["main"]["tmpPath"], "/calrissian")
 
         logger.info("create Calrissian job")
         self.update_status(progress=21, message="Submit execution")
@@ -293,7 +326,9 @@ class ZooCalrissianRunner(BaseRunner):
         else:
             exit_value = zoo.SERVICE_FAILED
 
-        self.update_status(progress=90, message="delivering outputs, logs and usage report")
+        self.update_status(
+            progress=90, message="delivering outputs, logs and usage report"
+        )
 
         logger.info("handle outputs execution logs")
         output = self.execution.get_output()
@@ -329,7 +364,7 @@ class ZooCalrissianRunner(BaseRunner):
 
         self.update_status(
             progress=100,
-            message=f'execution {"failed" if exit_value == zoo.SERVICE_FAILED else "successful"}',
+            message=f"execution {'failed' if exit_value == zoo.SERVICE_FAILED else 'successful'}",
         )
 
         return exit_value
@@ -344,26 +379,30 @@ class ZooCalrissianRunner(BaseRunner):
 
     def wrap(self):
         workflow_id = self.get_workflow_id()
-        
+
         # Get the workflow object
         workflow = self.workflow.get_workflow()
-        
+
         # Rename any CommandLineTool/process named 'main' to avoid conflict with orchestrator
         # The orchestrator created by eoap-cwlwrap is always named 'main'
         for elem in self.workflow.cwl:
-            if hasattr(elem, 'id') and elem.id == 'main':
+            if hasattr(elem, "id") and elem.id == "main":
                 # Rename to avoid conflict - use the workflow name or 'clt'
                 new_id = f"{workflow_id}_clt"
-                logger.info(f"Renaming '{elem.id}' to '{new_id}' to avoid conflict with orchestrator")
+                logger.info(
+                    f"Renaming '{elem.id}' to '{new_id}' to avoid conflict with orchestrator"
+                )
                 elem.id = new_id
-                
+
                 # Update any references to this process in workflow steps
-                if hasattr(workflow, 'steps'):
+                if hasattr(workflow, "steps"):
                     for step in workflow.steps:
-                        if step.run == '#main':
-                            step.run = f'#{new_id}'
-                            logger.info(f"Updated step '{step.id}' to reference '#{new_id}'")
-        
+                        if step.run == "#main":
+                            step.run = f"#{new_id}"
+                            logger.info(
+                                f"Updated step '{step.id}' to reference '#{new_id}'"
+                            )
+
         # Now wrap the workflow (not the CommandLineTool)
         process_to_wrap = workflow.id
         logger.info(f"Wrapping process: {process_to_wrap}")
@@ -390,12 +429,12 @@ class ZooCalrissianRunner(BaseRunner):
                 file_stage_in=file_stage_in_cwl,
                 directory_stage_out=directory_stage_out_cwl,
             )
-            
+
             # Serialize using dump_cwl
             from cwl_loader import dump_cwl
             from io import StringIO
             import yaml
-            
+
             stream = StringIO()
             try:
                 dump_cwl(wrapped_workflow, stream)
@@ -405,12 +444,12 @@ class ZooCalrissianRunner(BaseRunner):
                 logger.warning(f"dump_cwl failed: {e}, using manual serialization")
                 if isinstance(wrapped_workflow, list):
                     wf = {
-                        '$graph': [proc.save() for proc in wrapped_workflow],
-                        'cwlVersion': 'v1.2'
+                        "$graph": [proc.save() for proc in wrapped_workflow],
+                        "cwlVersion": "v1.2",
                     }
                 else:
                     wf = wrapped_workflow.save()
-                
+
         except Exception as e:
             logger.error(f"Cannot wrap CWL: {e}")
             raise e
