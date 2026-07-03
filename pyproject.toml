@@ -38,9 +38,11 @@ dependencies = [
 ]
 
 [project.urls]
-Documentation = "https://github.com/EOEPCA/zoo-calrissian-runner#readme"
+Homepage = "https://github.com/ZOO-Project/zoo-calrissian-runner"
+Documentation = "https://zoo-project.github.io/zoo-calrissian-runner/"
 Issues = "https://github.com/EOEPCA/zoo-calrissian-runner/issues"
 Source = "https://github.com/EOEPCA/zoo-calrissian-runner"
+Changelog = "https://github.com/ZOO-Project/zoo-calrissian-runner/blob/main/CHANGELOG.md"
 
 [tool.hatch.version]
 path = "zoo_calrissian_runner/__about__.py"
